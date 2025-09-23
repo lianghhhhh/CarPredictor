@@ -3,7 +3,6 @@
 import csv
 import torch
 import torch.nn as nn
-from torch.utils.data import DataLoader
 from carPredictor import CarPredictor
 
 def selectMode():
@@ -20,38 +19,40 @@ def getData():
     for row in data: # skip first column (timestamp)
         data_list.append([float(i) for i in row[1:]])
 
-    data_list = torch.tensor(data_list, dtype=torch.float32).numpy()
-    # split into train and test
-    split_idx = int(0.8 * len(data_list))
-    train_data = DataLoader(data_list[:split_idx], batch_size=32, shuffle=True)
-    test_data = DataLoader(data_list[split_idx:], batch_size=32, shuffle=False)
+    lookback = 10
+    train_data = []
+    target_data = []
+    for i in range(len(data_list) - lookback):
+        train_data.append(data_list[i:i+lookback])
+        target_data.append(data_list[i+lookback])
 
-    return train_data, test_data
+    split_idx = int(0.8 * len(train_data))
+    train_dataset = torch.tensor(train_data[:split_idx], dtype=torch.float32)
+    test_dataset = torch.tensor(train_data[split_idx:], dtype=torch.float32)
+    split_idx = int(0.8 * len(target_data))
+    train_targets = torch.tensor(target_data[:split_idx], dtype=torch.float32)
+    test_targets = torch.tensor(target_data[split_idx:], dtype=torch.float32)
+
+    return train_dataset, train_targets, test_dataset, test_targets
 
 def trainModel():
-    train_data, _ = getData()
+    train_dataset, train_targets, _, _ = getData()
     model = CarPredictor()
     criterion = nn.MSELoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model.to(device)
     
-    num_epochs = 20
+    num_epochs = 2000
     for epoch in range(num_epochs):
-        for i, data in enumerate(train_data):
-            # input is current data, target is next data
-            inputs = data.unsqueeze(1).to(device)
-            if i + 1 < len(train_data):
-                targets = torch.tensor(train_data.dataset[i+1:i+2], dtype=torch.float32).to(device)
-            else:
-                targets = data.to(device)
-
-            outputs = model(inputs)
-            loss = criterion(outputs, targets)
-            
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
+        model.train()
+        inputs = train_dataset.to(device)
+        targets = train_targets.to(device)
+        outputs = model(inputs)
+        loss = criterion(outputs, targets)
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
         
         print(f'Epoch [{epoch+1}/{num_epochs}], Loss: {loss.item():.4f}')
     
@@ -59,7 +60,7 @@ def trainModel():
     print("Model trained and saved as car_predictor.pth")
 
 def runInference():
-    _, test_data = getData()
+    _, _, test_dataset, test_targets = getData()
     model = CarPredictor()
     model.load_state_dict(torch.load('car_predictor.pth'))
     model.eval()
@@ -68,23 +69,21 @@ def runInference():
     accuracy = 0.0
     
     with torch.no_grad():
-        for i, data in enumerate(test_data):
-            inputs = data.unsqueeze(1).to(device)
-            if i + 1 < len(test_data):
-                targets = torch.tensor(test_data.dataset[i+1:i+2], dtype=torch.float32).to(device)
-            else:
-                targets = data.to(device)
+        inputs = test_dataset.to(device)
+        targets = test_targets.to(device)
+        outputs = model(inputs)
 
-            outputs = model(inputs)
-            print(f'Input: {inputs.squeeze(1).cpu().numpy()}')
-            print(f'Predicted: {outputs.cpu().numpy()}')
-            print(f'Actual: {targets.cpu().numpy()}')
-            for j in range(outputs.size(1)): # calculate accuracy per feature
-                accuracy += (1 - abs((outputs[0][j] - targets[0][j]) / (targets[0][j] + 1e-6))).item()
-            if i == 5:  # limit output for brevity
-                break
+        print("outputs", outputs)
+        print("targets", targets)
+        
+        for i in range(len(outputs)):
+            pred = outputs[i].cpu().numpy()
+            actual = targets[i].cpu().numpy()
+            correct = sum(1 for p, a in zip(pred, actual) if abs(p - a) < 0.1)
+            accuracy += correct / len(actual)
 
-        print(f'Inference accuracy: {accuracy / len(test_data.dataset):.4f}')
+    accuracy /= len(outputs)
+    print(f'Inference completed. Accuracy: {accuracy:.2f}%')
 
 
 if __name__ == "__main__":
