@@ -4,6 +4,9 @@ import csv
 import torch
 import torch.nn as nn
 from carPredictor import CarPredictor
+import matplotlib.pyplot as plt
+import numpy as np
+from torch.utils.tensorboard import SummaryWriter
 
 def selectMode():
     print("Select mode:")
@@ -13,11 +16,25 @@ def selectMode():
     return mode
 
 def getData():
-    data = csv.reader(open('carData.csv', 'r'))
+    data = csv.reader(open('carData_1.csv', 'r'))
     next(data)  # skip header
     data_list = []
     for row in data: # skip first column (timestamp)
         data_list.append([float(i) for i in row[1:]])
+        # replace angle with sin and cos
+        angle = data_list[-1][7]
+        data_list[-1][7] = np.sin(np.radians(angle))
+        data_list[-1].append(np.cos(np.radians(angle)))
+
+    # Normalize the data
+    data_array = np.array(data_list)
+    data_mean = data_array.mean(axis=0)
+    data_std = data_array.std(axis=0)
+    data_list = (data_array - data_mean) / data_std
+
+    # save mean and std for inference
+    np.save('data_mean.npy', data_mean)
+    np.save('data_std.npy', data_std)
 
     lookback = 10
     train_data = []
@@ -43,7 +60,8 @@ def trainModel():
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model.to(device)
     
-    num_epochs = 2000
+    writer = SummaryWriter(log_dir='logs')
+    num_epochs = 100000
     for epoch in range(num_epochs):
         model.train()
         inputs = train_dataset.to(device)
@@ -53,9 +71,13 @@ def trainModel():
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
+        writer.add_scalar('Loss/train', loss.item(), epoch)
         
         print(f'Epoch [{epoch+1}/{num_epochs}], Loss: {loss.item():.4f}')
+        if epoch > 0 and epoch % 1000 == 0:
+            torch.save(model.state_dict(), f'model_norm/car_predictor_{epoch}.pth')
     
+    writer.close()
     torch.save(model.state_dict(), 'car_predictor.pth')
     print("Model trained and saved as car_predictor.pth")
 
@@ -66,7 +88,6 @@ def runInference():
     model.eval()
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model.to(device)
-    accuracy = 0.0
     
     with torch.no_grad():
         inputs = test_dataset.to(device)
@@ -76,14 +97,28 @@ def runInference():
         print("outputs", outputs)
         print("targets", targets)
         
+        accuracy = 0.0
+        correct = [0] * outputs.shape[1]
         for i in range(len(outputs)):
-            pred = outputs[i].cpu().numpy()
-            actual = targets[i].cpu().numpy()
-            correct = sum(1 for p, a in zip(pred, actual) if abs(p - a) < 0.1)
-            accuracy += correct / len(actual)
+            for j in range(len(outputs[i])):
+                if abs(outputs[i][j] - targets[i][j]) < 0.1 * abs(targets[i][j]): # within 10% margin
+                    correct[j] += 1
 
-    accuracy /= len(outputs)
-    print(f'Inference completed. Accuracy: {accuracy:.2f}%')
+    accuracy = [c / len(outputs) * 100 for c in correct]
+    print("Accuracy per output dimension (% within 10% margin):", [f"{a:.2f}%" for a in accuracy])
+
+    # plot each column of outputs and targets
+    # for i in range(outputs.shape[1]):
+    #     plt.figure()
+    #     plt.plot(outputs[:, i].cpu().numpy(), label='Predicted')
+    #     plt.plot(targets[:, i].cpu().numpy(), label='Actual')
+    #     plt.title(f'Output Dimension {i+1}')
+    #     plt.xlabel('Sample')
+    #     plt.ylabel('Value')
+    #     plt.legend()
+    #     plt.show()
+
+
 
 
 if __name__ == "__main__":
