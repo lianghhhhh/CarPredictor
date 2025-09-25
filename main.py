@@ -66,7 +66,11 @@ def trainModel():
         model.train()
         inputs = train_dataset.to(device)
         targets = train_targets.to(device)
-        outputs = model(inputs)
+        predicts = model(inputs)
+        
+        # predicts delta, add each predict to each input's last frame
+        outputs = inputs[:, -1, :] + predicts
+
         loss = criterion(outputs, targets)
         optimizer.zero_grad()
         loss.backward()
@@ -75,7 +79,7 @@ def trainModel():
         
         print(f'Epoch [{epoch+1}/{num_epochs}], Loss: {loss.item():.4f}')
         if epoch > 0 and epoch % 1000 == 0:
-            torch.save(model.state_dict(), f'model_norm/car_predictor_{epoch}.pth')
+            torch.save(model.state_dict(), f'model_delta/car_predictor_{epoch}.pth')
     
     writer.close()
     torch.save(model.state_dict(), 'car_predictor.pth')
@@ -92,7 +96,9 @@ def runInference():
     with torch.no_grad():
         inputs = test_dataset.to(device)
         targets = test_targets.to(device)
-        outputs = model(inputs)
+        predicts = model(inputs)
+
+        outputs = inputs[:, -1, :] + predicts  # add delta to last frame of input
 
         print("outputs", outputs)
         print("targets", targets)
