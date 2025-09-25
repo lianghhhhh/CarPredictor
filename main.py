@@ -113,18 +113,18 @@ def runInference():
     accuracy = [c / len(outputs) * 100 for c in correct]
     print("Accuracy per output dimension (% within 10% margin):", [f"{a:.2f}%" for a in accuracy])
 
-    # plot each column of outputs and targets
-    # for i in range(outputs.shape[1]):
-    #     plt.figure()
-    #     plt.plot(outputs[:, i].cpu().numpy(), label='Predicted')
-    #     plt.plot(targets[:, i].cpu().numpy(), label='Actual')
-    #     plt.title(f'Output Dimension {i+1}')
-    #     plt.xlabel('Sample')
-    #     plt.ylabel('Value')
-    #     plt.legend()
-    #     plt.show()
-
-
+    # plot all in one figure
+    plt.figure(figsize=(15, 10))
+    for i in range(outputs.shape[1]):
+        plt.subplot(4, 4, i+1)
+        plt.plot(outputs[:, i].cpu().numpy(), label='Predicted')
+        plt.plot(targets[:, i].cpu().numpy(), label='Actual')
+        plt.title(f'dim {i+1}')
+        plt.xlabel('Sample')
+        plt.ylabel('Value')
+        plt.legend()
+    plt.tight_layout()
+    plt.savefig('result.png')
 
 
 if __name__ == "__main__":
