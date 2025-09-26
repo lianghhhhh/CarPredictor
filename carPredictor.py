@@ -1,16 +1,16 @@
 # create a lstm model to predict car movements
-# input: current four wheels speed, xyz position, angles
-# output: next four wheels speed, xyz position, angles
+# input: current four wheels speed, xyz position, angles(sin, cos) *9
+# output: next xyz position, angles(sin, cos) *5
 
 import torch
 import torch.nn as nn
 
 class CarPredictor(nn.Module):
-    def __init__(self, input_size=9, hidden_size=50, output_size=9, num_layers=2):
+    def __init__(self, input_size=9, hidden_size=90, output_size=5, num_layers=4, dropout=0.2):
         super(CarPredictor, self).__init__()
         self.hidden_size = hidden_size
         self.num_layers = num_layers
-        self.lstm = nn.LSTM(input_size, hidden_size, num_layers, batch_first=True)
+        self.lstm = nn.LSTM(input_size, hidden_size, num_layers, batch_first=True, dropout=dropout)
         self.fc = nn.Linear(hidden_size, output_size)
 
     def forward(self, x):

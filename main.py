@@ -2,10 +2,10 @@
 
 import csv
 import torch
-import torch.nn as nn
-from carPredictor import CarPredictor
-import matplotlib.pyplot as plt
 import numpy as np
+import torch.nn as nn
+import matplotlib.pyplot as plt
+from carPredictor import CarPredictor
 from torch.utils.tensorboard import SummaryWriter
 
 def selectMode():
@@ -26,12 +26,15 @@ def getData():
         data_list[-1][7] = np.sin(np.radians(angle))
         data_list[-1].append(np.cos(np.radians(angle)))
 
-    # Normalize the data
+    print("data example:", data_list[0:5])
+    # Normalize only column 0-4 and 6 (v1-v4, x, z)
     data_array = np.array(data_list)
-    data_mean = data_array.mean(axis=0)
-    data_std = data_array.std(axis=0)
-    data_list = (data_array - data_mean) / data_std
+    data_mean = np.mean(data_array[:, [0,1,2,3,4,6]], axis=0)
+    data_std = np.std(data_array[:, [0,1,2,3,4,6]], axis=0)
+    data_array[:, [0,1,2,3,4,6]] = (data_array[:, [0,1,2,3,4,6]] - data_mean) / data_std
+    data_list = data_array.tolist()
 
+    print("normalized data example:", data_list[0:5])
     # save mean and std for inference
     np.save('data_mean.npy', data_mean)
     np.save('data_std.npy', data_std)
@@ -41,8 +44,9 @@ def getData():
     target_data = []
     for i in range(len(data_list) - lookback):
         train_data.append(data_list[i:i+lookback])
-        target_data.append(data_list[i+lookback])
+        target_data.append(data_list[i+lookback][4:9]) # xyz, sin(angle), cos(angle)
 
+    print("target_data example:", target_data[0:5])
     split_idx = int(0.8 * len(train_data))
     train_dataset = torch.tensor(train_data[:split_idx], dtype=torch.float32)
     test_dataset = torch.tensor(train_data[split_idx:], dtype=torch.float32)
@@ -60,7 +64,7 @@ def trainModel():
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model.to(device)
     
-    writer = SummaryWriter(log_dir='logs')
+    writer = SummaryWriter(log_dir='logs/model_params_new')
     num_epochs = 100000
     for epoch in range(num_epochs):
         model.train()
@@ -68,8 +72,8 @@ def trainModel():
         targets = train_targets.to(device)
         predicts = model(inputs)
         
-        # predicts delta, add each predict to each input's last frame
-        outputs = inputs[:, -1, :] + predicts
+        # predicts delta, add each predict to each input's last frame 4:9 (x, y, z, sin(angle), cos(angle))
+        outputs = inputs[:, -1, 4:9] + predicts
 
         loss = criterion(outputs, targets)
         optimizer.zero_grad()
@@ -78,8 +82,8 @@ def trainModel():
         writer.add_scalar('Loss/train', loss.item(), epoch)
         
         print(f'Epoch [{epoch+1}/{num_epochs}], Loss: {loss.item():.4f}')
-        if epoch > 0 and epoch % 1000 == 0:
-            torch.save(model.state_dict(), f'model_delta/car_predictor_{epoch}.pth')
+        if epoch > 0 and epoch % 100 == 0:
+            torch.save(model.state_dict(), f'model_params_new/car_predictor_{epoch}.pth')
     
     writer.close()
     torch.save(model.state_dict(), 'car_predictor.pth')
@@ -98,11 +102,12 @@ def runInference():
         targets = test_targets.to(device)
         predicts = model(inputs)
 
-        outputs = inputs[:, -1, :] + predicts  # add delta to last frame of input
+        # predicts delta, add each predict to each input's last frame 4:9 (x, y, z, sin(angle), cos(angle))
+        outputs = inputs[:, -1, 4:9] + predicts
 
-        print("outputs", outputs)
-        print("targets", targets)
-        
+        print("outputs", *outputs[0:5].cpu().numpy())
+        print("targets", *targets[0:5].cpu().numpy())
+
         accuracy = 0.0
         correct = [0] * outputs.shape[1]
         for i in range(len(outputs)):
@@ -124,7 +129,7 @@ def runInference():
         plt.ylabel('Value')
         plt.legend()
     plt.tight_layout()
-    plt.savefig('result.png')
+    plt.savefig('result_new.png')
 
 
 if __name__ == "__main__":
