@@ -6,7 +6,7 @@ import torch
 import torch.nn as nn
 
 class CarPredictor(nn.Module):
-    def __init__(self, input_size=9, hidden_size=90, output_size=5, num_layers=4, dropout=0.2):
+    def __init__(self, input_size=9, hidden_size=30, output_size=5, num_layers=2, dropout=0.2):
         super(CarPredictor, self).__init__()
         self.hidden_size = hidden_size
         self.num_layers = num_layers

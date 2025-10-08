@@ -1,0 +1,16 @@
+{
+    "name": "test",
+    "model":{
+        "hidden_size": 30,
+        "dropout": 0.2,
+        "num_layers": 2,
+        "learning_rate": 0.001
+    },
+    "data": "../data/carData.csv",
+    "norm_params": {
+        "directory": "norm_params",
+        "mean": "test_mean.npy",
+        "std": "test_std.npy"
+    },
+    "result_png": "test.png"
+}

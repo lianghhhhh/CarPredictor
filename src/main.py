@@ -1,11 +1,11 @@
 # train or inference
 
-import csv
+import os
 import torch
-import numpy as np
 import torch.nn as nn
 import matplotlib.pyplot as plt
 from carPredictor import CarPredictor
+from utils import loadConfig, getData
 from torch.utils.tensorboard import SummaryWriter
 
 def selectMode():
@@ -15,57 +15,21 @@ def selectMode():
     mode = input("Enter mode (1 or 2): ")
     return mode
 
-def getData():
-    data = csv.reader(open('carData_1.csv', 'r'))
-    next(data)  # skip header
-    data_list = []
-    for row in data: # skip first column (timestamp)
-        data_list.append([float(i) for i in row[1:]])
-        # replace angle with sin and cos
-        angle = data_list[-1][7]
-        data_list[-1][7] = np.sin(np.radians(angle))
-        data_list[-1].append(np.cos(np.radians(angle)))
-
-    print("data example:", data_list[0:5])
-    # Normalize only column 0-4 and 6 (v1-v4, x, z)
-    data_array = np.array(data_list)
-    data_mean = np.mean(data_array[:, [0,1,2,3,4,6]], axis=0)
-    data_std = np.std(data_array[:, [0,1,2,3,4,6]], axis=0)
-    data_array[:, [0,1,2,3,4,6]] = (data_array[:, [0,1,2,3,4,6]] - data_mean) / data_std
-    data_list = data_array.tolist()
-
-    print("normalized data example:", data_list[0:5])
-    # save mean and std for inference
-    np.save('data_mean.npy', data_mean)
-    np.save('data_std.npy', data_std)
-
-    lookback = 10
-    train_data = []
-    target_data = []
-    for i in range(len(data_list) - lookback):
-        train_data.append(data_list[i:i+lookback])
-        target_data.append(data_list[i+lookback][4:9]) # xyz, sin(angle), cos(angle)
-
-    print("target_data example:", target_data[0:5])
-    split_idx = int(0.8 * len(train_data))
-    train_dataset = torch.tensor(train_data[:split_idx], dtype=torch.float32)
-    test_dataset = torch.tensor(train_data[split_idx:], dtype=torch.float32)
-    split_idx = int(0.8 * len(target_data))
-    train_targets = torch.tensor(target_data[:split_idx], dtype=torch.float32)
-    test_targets = torch.tensor(target_data[split_idx:], dtype=torch.float32)
-
-    return train_dataset, train_targets, test_dataset, test_targets
-
-def trainModel():
-    train_dataset, train_targets, _, _ = getData()
-    model = CarPredictor()
+def trainModel(config):
+    train_dataset, train_targets, _, _ = getData(config)
+    model = CarPredictor(
+        hidden_size=config['model']['hidden_size'], 
+        num_layers=config['model']['num_layers'], 
+        dropout=config['model']['dropout']
+    )
     criterion = nn.MSELoss()
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+    optimizer = torch.optim.Adam(model.parameters(), lr=config['model']['learning_rate'])
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model.to(device)
-    
-    writer = SummaryWriter(log_dir='logs/model_params_new')
-    num_epochs = 100000
+
+    log_dir = '../logs/' + config['name']
+    writer = SummaryWriter(log_dir=log_dir)
+    num_epochs = 100
     for epoch in range(num_epochs):
         model.train()
         inputs = train_dataset.to(device)
@@ -82,17 +46,24 @@ def trainModel():
         writer.add_scalar('Loss/train', loss.item(), epoch)
         
         print(f'Epoch [{epoch+1}/{num_epochs}], Loss: {loss.item():.4f}')
-        if epoch > 0 and epoch % 100 == 0:
-            torch.save(model.state_dict(), f'model_params_new/car_predictor_{epoch}.pth')
-    
-    writer.close()
-    torch.save(model.state_dict(), 'car_predictor.pth')
-    print("Model trained and saved as car_predictor.pth")
 
-def runInference():
-    _, _, test_dataset, test_targets = getData()
-    model = CarPredictor()
-    model.load_state_dict(torch.load('car_predictor.pth'))
+        # create dir
+        os.makedirs(f'../models/{config["name"]}', exist_ok=True)
+        if epoch > 0 and epoch % 100 == 0:
+            torch.save(model.state_dict(), f'../models/{config["name"]}/{epoch}.pth')
+
+    writer.close()
+    torch.save(model.state_dict(), f'../{config["name"]}.pth')
+    print(f"Model trained and saved as {config['name']}.pth")
+
+def runInference(config):
+    _, _, test_dataset, test_targets = getData(config)
+    model = CarPredictor(
+        hidden_size=config['model']['hidden_size'], 
+        num_layers=config['model']['num_layers'], 
+        dropout=config['model']['dropout']
+    )
+    model.load_state_dict(torch.load(f'../{config["name"]}.pth'))
     model.eval()
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model.to(device)
@@ -112,6 +83,22 @@ def runInference():
         correct = [0] * outputs.shape[1]
         for i in range(len(outputs)):
             for j in range(len(outputs[i])):
+                # # change output and target back to original scale for accuracy calculation
+                # data_mean = np.load('data_mean.npy')
+                # data_std = np.load('data_std.npy')
+                # if j == 0: # x
+                #     outputs[i][j] = outputs[i][j] * data_std[4] + data_mean[4]
+                #     targets[i][j] = targets[i][j] * data_std[4] + data_mean[4]
+                # elif j == 2: # z
+                #     outputs[i][j] = outputs[i][j] * data_std[5] + data_mean[5]
+                #     targets[i][j] = targets[i][j] * data_std[5] + data_mean[5]
+                # # change angle back to degrees
+                # elif j == 3 or j == 4: # sin(angle), cos(angle)
+                #     angle_out = np.degrees(np.arctan2(outputs[i][3].cpu().numpy(), outputs[i][4].cpu().numpy()))
+                #     angle_tgt = np.degrees(np.arctan2(targets[i][3].cpu().numpy(), targets[i][4].cpu().numpy()))
+                #     outputs[i][j] = angle_out.item()
+                #     targets[i][j] = angle_tgt.item()
+
                 if abs(outputs[i][j] - targets[i][j]) < 0.1 * abs(targets[i][j]): # within 10% margin
                     correct[j] += 1
 
@@ -129,14 +116,16 @@ def runInference():
         plt.ylabel('Value')
         plt.legend()
     plt.tight_layout()
-    plt.savefig('result_new.png')
+    fig_path = os.path.join(os.path.dirname(__file__), '..', config['result_png'])
+    plt.savefig(fig_path)
 
 
 if __name__ == "__main__":
     mode = selectMode()
+    config = loadConfig()
     if mode == '1':
-        trainModel()
+        trainModel(config)
     elif mode == '2':
-        runInference()
+        runInference(config)
     else:
         print("Invalid mode selected. Please choose 1 or 2.")
