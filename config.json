@@ -1,16 +1,17 @@
 {
-    "name": "test",
+    "name": "model_2_2",
     "model":{
-        "hidden_size": 30,
+        "hidden_size": 40,
         "dropout": 0.2,
         "num_layers": 2,
-        "learning_rate": 0.001
+        "learning_rate": 0.001,
+        "epochs": 10000
     },
-    "data": "../data/carData.csv",
+    "data": "../data/carData_2.csv",
     "norm_params": {
         "directory": "norm_params",
-        "mean": "test_mean.npy",
-        "std": "test_std.npy"
+        "mean": "data_mean_2_2.npy",
+        "std": "data_std_2_2.npy"
     },
-    "result_png": "test.png"
+    "result_png": "result_2_2.png"
 }
