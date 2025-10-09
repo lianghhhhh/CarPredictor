@@ -7,7 +7,7 @@ import torch.nn as nn
 import matplotlib.pyplot as plt
 from carPredictor import CarPredictor
 from torch.utils.tensorboard import SummaryWriter
-from utils import loadConfig, getData, denormalize
+from utils import loadConfig, getData, denormalize, angleToDegrees
 
 def selectMode():
     print("Select mode:")
@@ -82,10 +82,7 @@ def runInference(config):
         targets = denormalize(targets, config)
 
         # change sin, cos back to angle in degrees
-        outputs_angle = np.degrees(np.asin(outputs[:, 3]))
-        targets_angle = np.degrees(np.asin(targets[:, 3]))
-        outputs = torch.cat((outputs[:, :3], outputs_angle.unsqueeze(1), outputs[:, 4].unsqueeze(1)), dim=1)
-        targets = torch.cat((targets[:, :3], targets_angle.unsqueeze(1), targets[:, 4].unsqueeze(1)), dim=1)
+        outputs, targets = angleToDegrees(outputs, targets)
 
         print("outputs", *outputs[0:5].cpu().numpy())
         print("targets", *targets[0:5].cpu().numpy())

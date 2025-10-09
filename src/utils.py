@@ -24,7 +24,7 @@ def getData(config):
     print("data example:", data_list[0:5])
 
     # Normalize only column 0-4 and 6 (v1-v4, x, z)
-    normalize(data_list, config)
+    data_list = normalize(data_list, config)
 
     lookback = 15
     train_data = []
@@ -57,6 +57,8 @@ def normalize(data_list, config):
     np.save(norm_dir + '/' + config['norm_params']['mean'], data_mean)
     np.save(norm_dir + '/' + config['norm_params']['std'], data_std)
 
+    return data_list
+
 def denormalize(data, config):
     norm_dir = os.path.join(os.path.dirname(__file__), '..', config['norm_params']['directory'])
     data_mean = np.load(norm_dir + '/' + config['norm_params']['mean'])
@@ -66,3 +68,17 @@ def denormalize(data, config):
     data = data.cpu().numpy()
     data[:, [0, 2]] = data[:, [0, 2]] * data_std[[4, 5]] + data_mean[[4, 5]]
     return torch.tensor(data, dtype=torch.float32)
+
+def angleToDegrees(outputs, targets):
+    # change sin, cos back to angle in degrees
+    output_angles = np.degrees(np.arctan2(outputs[:, 3], outputs[:, 4]))
+    target_angles = np.degrees(np.arctan2(targets[:, 3], targets[:, 4]))
+
+    # arctan2 returns angle in range [-180, 180], convert to [0, 360]
+    output_angles = (output_angles + 360) % 360
+    target_angles = (target_angles + 360) % 360
+
+    outputs = torch.cat((outputs[:, :3], output_angles.unsqueeze(1)), dim=1)
+    targets = torch.cat((targets[:, :3], target_angles.unsqueeze(1)), dim=1)
+
+    return outputs, targets
