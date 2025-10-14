@@ -2,7 +2,6 @@
 
 import os
 import torch
-import numpy as np
 import torch.nn as nn
 import matplotlib.pyplot as plt
 from carPredictor import CarPredictor
@@ -18,11 +17,18 @@ def selectMode():
 
 def trainModel(config):
     train_dataset, train_targets, _, _ = getData(config)
+
     model = CarPredictor(
         hidden_size=config['model']['hidden_size'], 
         num_layers=config['model']['num_layers'], 
         dropout=config['model']['dropout']
     )
+    if os.path.exists(f'../{config["name"]}.pth'):
+        print(f"Model {config['name']} already exists. Loading existing model.")
+        model.load_state_dict(torch.load(f'../{config["name"]}.pth'))
+    else:
+        print(f"Training new model {config['name']}.")
+
     criterion = nn.MSELoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=config['model']['learning_rate'])
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -46,7 +52,7 @@ def trainModel(config):
         optimizer.step()
         writer.add_scalar('Loss/train', loss.item(), epoch)
         
-        print(f'Epoch [{epoch+1}/{num_epochs}], Loss: {loss.item():.4f}')
+        print(f'Epoch [{epoch+1}/{num_epochs}], Loss: {loss.item()}')
 
         # create dir
         os.makedirs(f'../models/{config["name"]}', exist_ok=True)
@@ -93,7 +99,16 @@ def runInference(config):
         plt.subplot(4, 4, i+1)
         # plt.plot(outputs[:, i].cpu().numpy(), label='Predicted')
         # plt.plot(targets[:, i].cpu().numpy(), label='Actual')
-        difference = abs(outputs[:, i] - targets[:, i]).cpu().numpy()
+        # difference = abs(outputs[:, i] - targets[:, i]).cpu().numpy()
+
+        # deal with difference for angle, handle wrap around 360
+        if i == 3: # angle column
+            difference = (outputs[:, i] - targets[:, i]).cpu().numpy()
+            difference = (difference + 180) % 360 - 180  # wrap around
+            difference = abs(difference)
+        else:
+            difference = abs(outputs[:, i] - targets[:, i]).cpu().numpy()
+
         plt.plot(difference, label='Difference', color='orange')
         plt.title(f'dim {i+1}')
         plt.xlabel('Sample')
