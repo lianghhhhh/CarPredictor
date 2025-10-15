@@ -97,17 +97,12 @@ def runInference(config):
     plt.figure(figsize=(15, 10))
     for i in range(outputs.shape[1]):
         plt.subplot(4, 4, i+1)
-        # plt.plot(outputs[:, i].cpu().numpy(), label='Predicted')
-        # plt.plot(targets[:, i].cpu().numpy(), label='Actual')
-        # difference = abs(outputs[:, i] - targets[:, i]).cpu().numpy()
 
-        # deal with difference for angle, handle wrap around 360
-        if i == 3: # angle column
-            difference = (outputs[:, i] - targets[:, i]).cpu().numpy()
+        # plot difference
+        difference = abs(outputs[:, i] - targets[:, i]).cpu().numpy()
+        if i == 3: # angle column, handle wrap around
             difference = (difference + 180) % 360 - 180  # wrap around
             difference = abs(difference)
-        else:
-            difference = abs(outputs[:, i] - targets[:, i]).cpu().numpy()
 
         plt.plot(difference, label='Difference', color='orange')
         plt.title(f'dim {i+1}')
