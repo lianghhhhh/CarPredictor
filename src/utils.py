@@ -26,7 +26,7 @@ def getData(config):
     # Normalize only column 0-4 and 6 (v1-v4, x, z)
     data_list = normalize(data_list, config)
 
-    lookback = 15
+    lookback = 30
     train_data = []
     target_data = []
     for i in range(len(data_list) - lookback):
